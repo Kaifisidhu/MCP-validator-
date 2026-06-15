@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""
+AXON-GUARD CLI
+  guard scan    --description "..." --args '{"key":"val"}' --user "user message"
+  guard server  --port 8001
+  guard test    (run test suite)
+"""
+import sys,os,json,argparse
+sys.path.insert(0,os.path.dirname(__file__))
+
+def cmd_scan(args):
+    from mcp_validator import MCPValidator
+    v=MCPValidator()
+    a=json.loads(args.args) if args.args else {}
+    r=v.validate_tool_call(
+        tool_name=args.name,
+        tool_description=args.description,
+        args=a,
+        user_message=args.user,
+    )
+    print(f"\n{'='*50}")
+    print(f"Tool: {args.name}")
+    print(f"Risk: {r.risk_level.value}  Score: {r.score:.3f}")
+    print(f"Decision: {'✓ ALLOW' if r.allow else '✗ BLOCK'}")
+    if r.flags:
+        print(f"\nFlags:")
+        for f in r.flags: print(f"  • {f}")
+    if r.owasp_refs:
+        print(f"\nOWASP: {', '.join(r.owasp_refs)}")
+    print(f"\n{r.recommendation}")
+    print(f"{'='*50}")
+    sys.exit(0 if r.allow else 1)
+
+def cmd_server(args):
+    import subprocess
+    subprocess.run([sys.executable,
+        os.path.join(os.path.dirname(__file__),'guard_server.py'),
+        '--port', str(args.port),
+        *([ '--strict'] if args.strict else [])
+    ])
+
+def cmd_test(_):
+    import subprocess
+    result = subprocess.run([sys.executable,
+        os.path.join(os.path.dirname(__file__),'tests.py')])
+    sys.exit(result.returncode)
+
+def main():
+    p=argparse.ArgumentParser(prog='guard')
+    s=p.add_subparsers(dest='command')
+    sc=s.add_parser('scan')
+    sc.add_argument('--name',required=True)
+    sc.add_argument('--description',required=True)
+    sc.add_argument('--args',default='{}')
+    sc.add_argument('--user',default=None)
+    sv=s.add_parser('server')
+    sv.add_argument('--port',type=int,default=8001)
+    sv.add_argument('--strict',action='store_true')
+    s.add_parser('test')
+    args=p.parse_args()
+    if args.command=='scan': cmd_scan(args)
+    elif args.command=='server': cmd_server(args)
+    elif args.command=='test': cmd_test(args)
+    else: p.print_help()
+
+if __name__=='__main__':
+    main()
